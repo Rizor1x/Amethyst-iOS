@@ -54,9 +54,10 @@ void init_loadDefaultEnv() {
     setenv("HACK_IGNORE_START_ON_FIRST_THREAD", "1", 1);
 }
 
-void init_loadCustomEnv() {
+static NSString *init_loadCustomEnv(void) {
     NSString *envvars = getPrefObject(@"java.env_variables");
-    if (envvars == nil) return;
+    if (envvars == nil) return nil;
+    NSString *jitFlags = nil;
     NSLog(@"[JavaLauncher] Reading custom environment variables");
     for (NSString *line in [envvars componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceCharacterSet]) {
         if (![line containsString:@"="]) {
@@ -66,9 +67,15 @@ void init_loadCustomEnv() {
         NSRange range = [line rangeOfString:@"="];
         NSString *key = [line substringToIndex:range.location];
         NSString *value = [line substringFromIndex:range.location+range.length];
+        if ([key isEqualToString:@"JIT_FLAGS"]) {
+            // Apply this override only to the current launch's probe.
+            jitFlags = value;
+            continue;
+        }
         setenv(key.UTF8String, value.UTF8String, 1);
         NSLog(@"[JavaLauncher] Added custom env variable: %@", line);
     }
+    return jitFlags;
 }
 
 void init_loadCustomJvmFlags(int* argc, const char** argv) {
@@ -105,10 +112,11 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     NSLog(@"[JavaLauncher] Beginning JVM launch");
 
     init_loadDefaultEnv();
-    init_loadCustomEnv();
+    NSString *jitFlags = init_loadCustomEnv();
 
-    DeviceGetJITFlags(YES); // refresh JIT flags right after loading env
-    BOOL requiresTXMWorkaround = DeviceHasJITFlags(JIT_FLAG_FORCE_MIRRORED | JIT_FLAG_HAS_TXM);
+    JITFlags flags = DeviceRefreshJITFlags(jitFlags.UTF8String);
+    JITFlags txmFlags = JIT_FLAG_FORCE_MIRRORED | JIT_FLAG_HAS_TXM;
+    BOOL requiresTXMWorkaround = (flags & txmFlags) == txmFlags;
     BOOL jit26AlwaysAttached = getPrefBool(@"debug.debug_always_attached_jit");
     NSLog(@"[JavaLauncher] JIT readiness=%d TXM workaround=%d keep debugger attached=%d",
         isJITEnabled(NO), requiresTXMWorkaround, jit26AlwaysAttached);

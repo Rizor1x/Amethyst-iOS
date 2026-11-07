@@ -232,7 +232,7 @@ void init_bypassDyldLibValidation() {
 
     NSDebugLog(@"[DyldLVBypass] init");
     
-    int jitFlags = (int)DeviceGetJITFlags(NO);
+    int jitFlags = (int)DeviceGetJITFlags();
     jitFlags &= ~JIT_FLAG_IS_IOS_26; // don't care about this flag for now
     switch (jitFlags) {
         case JIT_FLAG_FORCE_MIRRORED | JIT_FLAG_HAS_TXM:

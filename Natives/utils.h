@@ -74,7 +74,8 @@ typedef enum {
     JIT_FLAG_FORCE_MIRRORED = 1 << 1,
     JIT_FLAG_HAS_TXM = 1 << 2,
 } JITFlags;
-JITFlags DeviceGetJITFlags(BOOL refresh);
+JITFlags DeviceGetJITFlags(void);
+JITFlags DeviceRefreshJITFlags(const char *override);
 BOOL DeviceHasJITFlags(JITFlags flags);
 
 // Init functions

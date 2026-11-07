@@ -1,7 +1,10 @@
 #import <SafariServices/SafariServices.h>
 
 #include "jni.h"
+#include <ctype.h>
 #include <dlfcn.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -241,36 +244,68 @@ __exported BOOL DeviceHasTXM(void) {
     return DeviceHasJITFlags(JIT_FLAG_HAS_TXM);
 }
 
-JITFlags DeviceGetJITFlags(BOOL refresh) {
-    static JITFlags cachedFlags = 0;
-    static dispatch_once_t onceToken;
-    if (refresh) onceToken = 0;
-    dispatch_once(&onceToken, ^{
-        const char *s = getenv("JIT_FLAGS");
-        if (s) {
-            if (s[0] == '0' && tolower(s[1]) == 'b') {
-                cachedFlags = strtoul(s + 2, NULL, 2);
-            } else {
-                cachedFlags = strtoul(s, NULL, 0);
-            }
-            NSLog(@"[JIT] Using overridden JIT flags: 0x%X", cachedFlags);
-            return;
+static pthread_mutex_t jitFlagsLock = PTHREAD_MUTEX_INITIALIZER;
+static _Atomic(JITFlags) cachedJITFlags;
+static atomic_bool hasCachedJITFlags;
+static _Thread_local BOOL computingJITFlags;
+
+static JITFlags getJITFlags(BOOL refresh, const char *override) {
+    // The probes may reenter through a runtime hook. Reuse the last complete
+    // snapshot (zero before the first probe) without reentering the lock.
+    if ((!refresh && atomic_load_explicit(&hasCachedJITFlags, memory_order_acquire)) || computingJITFlags) {
+        return atomic_load_explicit(&cachedJITFlags, memory_order_relaxed);
+    }
+
+    pthread_mutex_lock(&jitFlagsLock);
+    if (!refresh && atomic_load_explicit(&hasCachedJITFlags, memory_order_relaxed)) {
+        JITFlags flags = atomic_load_explicit(&cachedJITFlags, memory_order_relaxed);
+        pthread_mutex_unlock(&jitFlagsLock);
+        return flags;
+    }
+
+    computingJITFlags = YES;
+    JITFlags flags = 0;
+    const char *configured = override ? override : getenv("JIT_FLAGS");
+    BOOL hasOverride = configured != NULL;
+    if (hasOverride) {
+        if (configured[0] == '0' && tolower((unsigned char)configured[1]) == 'b') {
+            flags = (JITFlags)strtoul(configured + 2, NULL, 2);
+        } else {
+            flags = (JITFlags)strtoul(configured, NULL, 0);
         }
-        
+    } else {
         if (@available(iOS 26.0, *)) {
-            cachedFlags |= JIT_FLAG_IS_IOS_26;
+            flags |= JIT_FLAG_IS_IOS_26;
             if (!DeviceCanCreateRXMap()) {
-                cachedFlags |= JIT_FLAG_FORCE_MIRRORED;
+                flags |= JIT_FLAG_FORCE_MIRRORED;
             }
         }
         if (DeviceHasTXMReal()) {
-            cachedFlags |= JIT_FLAG_HAS_TXM;
+            flags |= JIT_FLAG_HAS_TXM;
         }
-        
-        if (refresh) NSLog(@"[JIT] Using computed JIT flags: 0x%X", cachedFlags);
-    });
-    return cachedFlags;
+    }
+
+    atomic_store_explicit(&cachedJITFlags, flags, memory_order_relaxed);
+    atomic_store_explicit(&hasCachedJITFlags, true, memory_order_release);
+    computingJITFlags = NO;
+    pthread_mutex_unlock(&jitFlagsLock);
+
+    if (hasOverride) {
+        NSLog(@"[JIT] Using overridden JIT flags: 0x%X", flags);
+    } else if (refresh) {
+        NSLog(@"[JIT] Using computed JIT flags: 0x%X", flags);
+    }
+    return flags;
 }
+
+JITFlags DeviceGetJITFlags(void) {
+    return getJITFlags(NO, NULL);
+}
+
+JITFlags DeviceRefreshJITFlags(const char *override) {
+    return getJITFlags(YES, override);
+}
+
 BOOL DeviceHasJITFlags(JITFlags flags) {
-    return (DeviceGetJITFlags(NO) & flags) == flags;
+    return (DeviceGetJITFlags() & flags) == flags;
 }

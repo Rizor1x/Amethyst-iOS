@@ -2,6 +2,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <libgen.h>
+#include <os/proc.h>
 #include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -100,6 +101,7 @@ void init_loadCustomJvmFlags(int* argc, const char** argv) {
 }
 
 int launchJVM(NSString *username, id launchTarget, int width, int height, int minVersion) {
+    NSTimeInterval launchStart = NSProcessInfo.processInfo.systemUptime;
     NSLog(@"[JavaLauncher] Beginning JVM launch");
 
     init_loadDefaultEnv();
@@ -108,10 +110,13 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     DeviceGetJITFlags(YES); // refresh JIT flags right after loading env
     BOOL requiresTXMWorkaround = DeviceHasJITFlags(JIT_FLAG_FORCE_MIRRORED | JIT_FLAG_HAS_TXM);
     BOOL jit26AlwaysAttached = getPrefBool(@"debug.debug_always_attached_jit");
+    NSLog(@"[JavaLauncher] JIT readiness=%d TXM workaround=%d keep debugger attached=%d",
+        isJITEnabled(NO), requiresTXMWorkaround, jit26AlwaysAttached);
     if (requiresTXMWorkaround) {
         static void *result;
         if(!result) result = JIT26CreateRegionLegacy(getpagesize());
         if ((uint32_t)result != 0x690000E0) {
+            NSLog(@"[JavaLauncher] Universal JIT script handshake failed");
             munmap(result, getpagesize());
             // we can't continue since legacy script only allows calling breakpoint once
             NSString *inBundleScriptPath = [NSBundle.mainBundle pathForResource:@"UniversalJIT26" ofType:@"js"];
@@ -214,7 +219,8 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     } else {
         allocmem = getPrefInt(@"java.allocated_memory");
     }
-    NSLog(@"[JavaLauncher] Max RAM allocation is set to %d MB", allocmem);
+    NSLog(@"[JavaLauncher] Heap limit=%d MiB available process memory=%zu MiB surface=%dx%d",
+        allocmem, os_proc_available_memory() >> 20, width, height);
     if (!validateVirtualMemorySpace(allocmem)) {
         UIKit_returnToSplitView();
         if (getEntitlementValue(@"com.apple.developer.kernel.increased-memory-limit")) {
@@ -285,9 +291,10 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
 
     if (!libjli) {
         const char *error = dlerror();
-        NSLog(@"[Init] JLI lib = NULL: %s", error);
+        NSString *message = error ? @(error) : @"Could not load libjli.dylib";
+        NSLog(@"[JavaLauncher] Failed to load JLI: %@", message);
         UIKit_returnToSplitView();
-        showDialog(localize(@"Error", nil), @(error));
+        showDialog(localize(@"Error", nil), message);
         return 1;
     }
 
@@ -356,7 +363,6 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     }
 
     init_loadCustomJvmFlags(&margc, (const char **)margv);
-    NSLog(@"[Init] Found JLI lib");
 
     NSString *classpath = [NSString stringWithFormat:@"%@/*", librariesPath];
     if (launchJar) {
@@ -382,11 +388,17 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     pJLI_Launch = (JLI_Launch_func *)dlsym(libjli, "JLI_Launch");
 
     if (NULL == pJLI_Launch) {
-        NSLog(@"[Init] JLI_Launch = NULL");
+        const char *error = dlerror();
+        NSString *message = error ? @(error) : @"JLI_Launch is missing from libjli.dylib";
+        NSLog(@"[JavaLauncher] Failed to resolve JLI_Launch: %@", message);
+        dlclose(libjli);
+        UIKit_returnToSplitView();
+        showDialog(localize(@"Error", nil), message);
         return -2;
     }
 
-    NSLog(@"[Init] Calling JLI_Launch");
+    NSLog(@"[JavaLauncher] Calling JLI_Launch after %.0f ms",
+        (NSProcessInfo.processInfo.systemUptime - launchStart) * 1000);
 
     // Cr4shed known issue: exit after crash dump,
     // reset signal handler so that JVM can catch them
@@ -399,7 +411,7 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     // Free split VC
     tmpRootVC = nil;
 
-    return pJLI_Launch(++margc, margv,
+    int status = pJLI_Launch(++margc, margv,
                    0, NULL, // sizeof(const_jargs) / sizeof(char *), const_jargs,
                    0, NULL, // sizeof(const_appclasspath) / sizeof(char *), const_appclasspath,
                    // These values are ignored in Java 17, so keep it anyways
@@ -409,4 +421,6 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
                    "java", "openjdk",
                    /* (const_jargs != NULL) ? JNI_TRUE : */ JNI_FALSE,
                    JNI_TRUE, JNI_FALSE, JNI_TRUE);
+    NSLog(@"[JavaLauncher] JLI_Launch returned %d", status);
+    return status;
 }

@@ -98,38 +98,50 @@ UIEdgeInsets getDefaultSafeArea() {
 
 #pragma mark Java runtime
 
-NSString* getSelectedJavaHome(NSString* defaultJRETag, int minVersion) {
-    NSDictionary *pref = getPrefObject(@"java.java_homes");
-    NSDictionary<NSString *, NSString *> *selected = pref[@"0"];
-    NSString *selectedVer = selected[defaultJRETag];
-    if (minVersion > selectedVer.intValue) {
-        NSArray *sortedVersions = [pref.allKeys valueForKeyPath:@"self.integerValue"];
-        sortedVersions = [sortedVersions sortedArrayUsingSelector:@selector(compare:)];
-        for (NSNumber *version in sortedVersions) {
-            if (version.intValue >= minVersion) {
-                selectedVer = version.stringValue;
-                break;
-            }
-        }
-        if (!selectedVer) {
-            NSLog(@"Error: requested Java >= %d was not installed!", minVersion);
-            return nil;
-        }
-    }
-
-    id selectedDir = pref[selectedVer];
-    if ([selectedDir isEqualToString:@"internal"]) {
-        selectedDir = [NSString stringWithFormat:@"%@/java_runtimes/java-%@-openjdk", NSBundle.mainBundle.bundlePath, selectedVer];
-    } else {
-        selectedDir = [NSString stringWithFormat:@"%s/java_runtimes/%@", getenv("AME_HOME"), selectedDir];
-    }
-
-    if ([NSFileManager.defaultManager fileExistsAtPath:selectedDir]) {
-        return selectedDir;
-    } else {
-        NSLog(@"Error: selected runtime for %@ does not exist: %@", defaultJRETag, selectedDir);
+static NSString *installedJavaHome(NSDictionary *runtimes, NSString *version) {
+    NSString *runtime = runtimes[version];
+    if (!runtime) {
         return nil;
     }
+
+    NSString *home;
+    if ([runtime isEqualToString:@"internal"]) {
+        home = [NSString stringWithFormat:@"%@/java_runtimes/java-%@-openjdk", NSBundle.mainBundle.bundlePath, version];
+    } else {
+        home = [NSString stringWithFormat:@"%s/java_runtimes/%@", getenv("AME_HOME"), runtime];
+    }
+
+    NSFileManager *files = NSFileManager.defaultManager;
+    if ([files fileExistsAtPath:[home stringByAppendingPathComponent:@"lib/libjli.dylib"]] ||
+        [files fileExistsAtPath:[home stringByAppendingPathComponent:@"lib/jli/libjli.dylib"]]) {
+        return home;
+    }
+    return nil;
+}
+
+NSString* getSelectedJavaHome(NSString* defaultJRETag, int minVersion) {
+    NSDictionary *runtimes = getPrefObject(@"java.java_homes");
+    NSString *preferred = runtimes[@"0"][defaultJRETag];
+    if (preferred.intValue > 0 && preferred.intValue >= minVersion) {
+        NSString *home = installedJavaHome(runtimes, preferred);
+        if (home) {
+            return home;
+        }
+    }
+
+    NSArray *versions = [[runtimes.allKeys valueForKeyPath:@"self.integerValue"] sortedArrayUsingSelector:@selector(compare:)];
+    for (NSNumber *version in versions) {
+        if (version.intValue == 0 || version.intValue < minVersion || [version.stringValue isEqualToString:preferred]) {
+            continue;
+        }
+        NSString *home = installedJavaHome(runtimes, version.stringValue);
+        if (home) {
+            NSLog(@"[JavaLauncher] Falling back to Java %@ for %@", version, defaultJRETag);
+            return home;
+        }
+    }
+    NSLog(@"[JavaLauncher] No installed Java runtime >= %d for %@", minVersion, defaultJRETag);
+    return nil;
 }
 
 #pragma mark Renderer

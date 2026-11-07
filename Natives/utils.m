@@ -14,13 +14,12 @@ void* SecTaskCreateFromSelf(CFAllocatorRef allocator);
 
 BOOL getEntitlementValue(NSString *key) {
     void *secTask = SecTaskCreateFromSelf(NULL);
-    CFTypeRef value = SecTaskCopyValueForEntitlement(SecTaskCreateFromSelf(NULL), key, nil);
-    CFRelease(secTask);
-    if (value == nil) {
+    if (!secTask) {
         return NO;
     }
-    CFRelease(value);
-    return ![(__bridge id)value isKindOfClass:NSNumber.class] || [(__bridge id)value boolValue];
+    id value = CFBridgingRelease(SecTaskCopyValueForEntitlement(secTask, key, nil));
+    CFRelease(secTask);
+    return value && (![value isKindOfClass:NSNumber.class] || [value boolValue]);
 }
 
 BOOL isJITEnabled(BOOL checkCSFlags) {
@@ -28,9 +27,8 @@ BOOL isJITEnabled(BOOL checkCSFlags) {
         return YES;
     }
 
-    int flags;
-    csops(getpid(), 0, &flags, sizeof(flags));
-    if ((flags & CS_DEBUGGED) == 0) {
+    int flags = 0;
+    if (csops(getpid(), 0, &flags, sizeof(flags)) != 0 || (flags & CS_DEBUGGED) == 0) {
         return NO;
     }
     if (!DeviceHasJITFlags(JIT_FLAG_FORCE_MIRRORED | JIT_FLAG_HAS_TXM)) {

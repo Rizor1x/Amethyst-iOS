@@ -245,3 +245,7 @@
 
 "controller_configurator.section.config_files" = "Текущий файл настроек";
 "controller_configurator.section.controller_style" = "Тип контроллера";
+"preference.profile.title.resolution_preset" = "Масштаб рендера";
+"preference.profile.resolution_preset.inherit" = "Из настроек видео";
+"preference.profile.resolution_preset.stable" = "Стабильный · 75%";
+"preference.profile.resolution_preset.maximum" = "Максимальный · 100%";

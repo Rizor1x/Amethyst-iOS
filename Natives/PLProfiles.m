@@ -11,12 +11,12 @@ static PLProfiles* current;
 
 + (id)defaultProfiles {
     return @{
-        @"profiles": @{
-            @"(Default)": @{
+        @"profiles": [@{
+            @"(Default)": [@{
                 @"name": @"(Default)",
                 @"lastVersionId": @"latest-release"
-            }
-        },
+            } mutableCopy]
+        } mutableCopy],
         @"selectedProfile": @"(Default)"
     }.mutableCopy;
 }
@@ -58,6 +58,13 @@ static PLProfiles* current;
 
 + (id)resolveKeyForCurrentProfile:(id)key {
     return [self profile:self.current.selectedProfile resolveKey:key];
+}
+
++ (float)resolutionForCurrentProfile {
+    NSString *preset = self.current.selectedProfile[@"resolutionPreset"];
+    if ([preset isEqual:@"75%"]) return 75.0f;
+    if ([preset isEqual:@"100%"]) return 100.0f;
+    return getPrefFloat(@"video.resolution");
 }
 
 - (id)initWithCurrentInstance {

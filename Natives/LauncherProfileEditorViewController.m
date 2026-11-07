@@ -116,6 +116,17 @@
               @"pickKeys": rendererKeys,
               @"pickList": rendererList
             },
+            @{@"key": @"resolutionPreset",
+              @"title": @"preference.profile.title.resolution_preset",
+              @"icon": @"viewfinder",
+              @"type": self.typePickField,
+              @"pickKeys": @[@"(default)", @"75%", @"100%"],
+              @"pickList": @[
+                localize(@"preference.profile.resolution_preset.inherit", nil),
+                localize(@"preference.profile.resolution_preset.stable", nil),
+                localize(@"preference.profile.resolution_preset.maximum", nil)
+              ]
+            },
             // Control settings
             @{@"key": @"defaultTouchCtrl",
               @"icon": @"hand.tap",

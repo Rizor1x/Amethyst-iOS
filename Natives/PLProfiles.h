@@ -10,6 +10,7 @@
 
 //+ (id)profile:(NSMutableDictionary *)profile resolveKey:(id)key;
 + (NSString *)resolveKeyForCurrentProfile:(id)key;
++ (float)resolutionForCurrentProfile;
 
 - (id)initWithCurrentInstance;
 - (NSMutableDictionary<NSString *, NSMutableDictionary<NSString *, NSString *> *> *)profiles;

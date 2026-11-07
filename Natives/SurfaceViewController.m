@@ -373,7 +373,7 @@ static GameSurfaceView* pojavWindow;
         self.surfaceView.frame = self.surfaceView.superview.frame;
     }
 
-    resolutionScale = getPrefFloat(@"video.resolution") / 100.0;
+    resolutionScale = [PLProfiles resolutionForCurrentProfile] / 100.0f;
     self.surfaceView.layer.contentsScale = self.screenScale * resolutionScale;
 
     physicalWidth = roundf(self.surfaceView.frame.size.width * self.screenScale);

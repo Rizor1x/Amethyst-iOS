@@ -277,6 +277,10 @@
 "preference.profile.title.version" = "Version";
 "preference.profile.title.version_type" = "Version type";
 "preference.profile.title.default_touch_control" = "Touch controls";
+"preference.profile.title.resolution_preset" = "Resolution preset";
+"preference.profile.resolution_preset.inherit" = "Use video settings";
+"preference.profile.resolution_preset.stable" = "Stable · 75%";
+"preference.profile.resolution_preset.maximum" = "Maximum · 100%";
 "preference.profile.title.default_gamepad_control" = "Gamepad controls";
 
 "profile.error.name_exists" = "A profile with that name already exists. Please use another name.";

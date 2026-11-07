@@ -45,11 +45,11 @@
 /* Begin PBXLegacyTarget section */
 		054957C52986E8DC00EFD4CE /* Angel Aura Amethyst */ = {
 			isa = PBXLegacyTarget;
-			buildArgumentsString = "-j$(sysctl -n hw.ncpu) dsym package";
+			buildArgumentsString = "gmake dsym package";
 			buildConfigurationList = 054957C82986E8DC00EFD4CE /* Build configuration list for PBXLegacyTarget "Angel Aura Amethyst" */;
 			buildPhases = (
 			);
-			buildToolPath = /usr/local/bin/gmake;
+			buildToolPath = /usr/bin/env;
 			buildWorkingDirectory = "";
 			dependencies = (
 			);
@@ -94,10 +94,8 @@
 			buildSettings = {
 				PATH = "${PATH}:/opt/procursus/bin:/opt/procursus/sbin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin";
 				PLATFORM = 2;
-				PROVISIONING = "/Users/evaluna/Library/MobileDevice/Provisioning Profiles/WildcardProvisioning.mobileprovision";
 				RELEASE = 0;
-				SIGNING_TEAMID = TF9842L8S8;
-				TEAMID = 95J8WZ4TN8;
+				SLIMMED_ONLY = 1;
 				VERBOSE = 1;
 			};
 			name = Debug;
@@ -107,10 +105,7 @@
 			buildSettings = {
 				PATH = "${PATH}:/opt/procursus/bin:/opt/procursus/sbin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin";
 				PLATFORM = 2;
-				PROVISIONING = "/Users/evaluna/Library/MobileDevice/Provisioning Profiles/WildcardProvisioning.mobileprovision";
 				RELEASE = 1;
-				SIGNING_TEAMID = TF9842L8S8;
-				TEAMID = 95J8WZ4TN8;
 				VERBOSE = 0;
 			};
 			name = Release;
@@ -118,20 +113,12 @@
 		054957C92986E8DC00EFD4CE /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				PROVISIONING = "/Users/evaluna/Library/MobileDevice/Provisioning Profiles/WildcardProvisioning.mobileprovision";
-				SIGNING_TEAMID = TF9842L8S8;
-				TEAMID = 95J8WZ4TN8;
-				_COMMENT = "You can change PLATFORM to vtool for non-iOS. PROVISIONING, SIGNING_TEAMID, and TEAMID are used for codesign, they won't work on your machine without edits. PATH, VERBOSE, and RELEASE do not need to be changed.";
 			};
 			name = Debug;
 		};
 		054957CA2986E8DC00EFD4CE /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				PROVISIONING = "/Users/evaluna/Library/MobileDevice/Provisioning Profiles/WildcardProvisioning.mobileprovision";
-				SIGNING_TEAMID = TF9842L8S8;
-				TEAMID = 95J8WZ4TN8;
-				_COMMENT = "You can change PLATFORM to vtool for non-iOS. PROVISIONING, SIGNING_TEAMID, and TEAMID are used for codesign, they won't work on your machine without edits. PATH, VERBOSE, and RELEASE do not need to be changed.";
 			};
 			name = Release;
 		};

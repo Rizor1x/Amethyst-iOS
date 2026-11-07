@@ -229,7 +229,7 @@ ifndef SDKPATH
 $(error You need to specify SDKPATH to the path of iPhoneOS.sdk. The SDK version should be 14.0 or newer.)
 endif
 
-all: clean native java jre assets payload package dsym
+all: clean native java assets payload package dsym
 
 help:
 	echo 'Makefile to compile Angel Aura Amethyst'
@@ -339,7 +339,11 @@ assets:
 	fi
 	echo '[Amethyst v$(VERSION)] assets - end'
 
-payload: native dep_mg java jre assets
+payload: native dep_mg java assets
+ifneq ($(SLIMMED_ONLY),1)
+payload: jre
+endif
+payload:
 	echo '[Amethyst v$(VERSION)] payload - start'
 	$(call METHOD_DIRCHECK,$(WORKINGDIR)/AngelAuraAmethyst.app/libs)
 	$(call METHOD_DIRCHECK,$(WORKINGDIR)/AngelAuraAmethyst.app/libs_caciocavallo)
@@ -367,7 +371,9 @@ payload: native dep_mg java jre assets
 	chmod -R 755 $(OUTPUTDIR)/Payload
 	if [ '$(PLATFORM)' != '2' ]; then \
 		$(call METHOD_MACHO,$(OUTPUTDIR)/Payload/AngelAuraAmethyst.app,$(call METHOD_CHANGE_PLAT,$(PLATFORM),$$file)); \
-		$(call METHOD_MACHO,$(OUTPUTDIR)/java_runtimes,$(call METHOD_CHANGE_PLAT,$(PLATFORM),$$file)); \
+		if [ '$(SLIMMED_ONLY)' != '1' ]; then \
+			$(call METHOD_MACHO,$(OUTPUTDIR)/java_runtimes,$(call METHOD_CHANGE_PLAT,$(PLATFORM),$$file)); \
+		fi; \
 	fi
 	echo '[Amethyst v$(VERSION)] payload - end'
 
@@ -409,7 +415,9 @@ package: payload
 	fi
 	cd $(OUTPUTDIR); \
 	$(call METHOD_PACKAGE); \
-	zip --symlinks -r $(OUTPUTDIR)/java_runtimes.zip java_runtimes; \
+	if [ '$(SLIMMED_ONLY)' != '1' ]; then \
+		zip --symlinks -r $(OUTPUTDIR)/java_runtimes.zip java_runtimes; \
+	fi
 	echo '[Amethyst v$(VERSION)] package - end'
 	
 dsym: payload
@@ -423,7 +431,9 @@ codesign:
 	echo '[Amethyst v$(VERSION)] codesign - start'
 	cp '$(PROVISIONING)' $(OUTPUTDIR)/Payload/AngelAuraAmethyst.app/embedded.mobileprovision
 	$(call METHOD_MACHO,$(OUTPUTDIR)/Payload/AngelAuraAmethyst.app,$(call METHOD_CODESIGN,$(SIGNING_TEAMID),$$file))
-	$(call METHOD_MACHO,$(OUTPUTDIR)/java_runtimes,$(call METHOD_CODESIGN,$(SIGNING_TEAMID),$$file))
+	if [ '$(SLIMMED_ONLY)' != '1' ]; then \
+		$(call METHOD_MACHO,$(OUTPUTDIR)/java_runtimes,$(call METHOD_CODESIGN,$(SIGNING_TEAMID),$$file)); \
+	fi
 	echo '[Amethyst v$(VERSION)] codesign - end'
 
 clean:

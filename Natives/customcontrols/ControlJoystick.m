@@ -27,6 +27,7 @@ NSMutableDictionary* createButton(NSString* name, int* keycodes, NSString* dynam
 @property(nonatomic) UIView *background, *thumb;
 @property(nonatomic) UIButton *fwdLockView;
 @property(nonatomic) CGPoint mCenter;
+@property(nonatomic) int movementDirection;
 @end
 
 @implementation ControlJoystick
@@ -34,6 +35,7 @@ NSMutableDictionary* createButton(NSString* name, int* keycodes, NSString* dynam
 + (id)buttonWithProperties:(NSMutableDictionary *)propArray {
     ControlJoystick *instance = [super buttonWithProperties:propArray];
     instance.clipsToBounds = NO;
+    instance.movementDirection = -1;
     instance.background = [UIView new];
     instance.thumb = [UIView new];
     instance.thumb.backgroundColor = UIColor.blackColor;
@@ -87,7 +89,9 @@ NSMutableDictionary* createButton(NSString* name, int* keycodes, NSString* dynam
     self.thumb.center = center;
 
     CGFloat deadzone = 0.35;
-    if (!isGrabbing || radius >= maxRadius*deadzone) {
+    if (isGrabbing && radius < maxRadius * deadzone) {
+        [self callbackMoveX:0 Y:0];
+    } else {
         [self callbackMoveX:((center.x / self.frame.size.width)*2-1) Y:((-center.y / self.frame.size.height)*2+1)];
     }
 
@@ -102,13 +106,23 @@ NSMutableDictionary* createButton(NSString* name, int* keycodes, NSString* dynam
 - (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event {
     if (isControlModifiable) return;
 
-    lastXValue = lastYValue = 0;
     if (isGrabbing && self.fwdLockView && CGRectContainsPoint(self.fwdLockView.frame, [touches.anyObject locationInView:self])) {
+        lastXValue = lastYValue = 0;
         self.fwdLockView.center = self.thumb.center;
     } else {
-        self.thumb.center = self.mCenter;
-        [self callbackMoveX:0 Y:0];
+        [self resetPosition];
     }
+}
+
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    if (!isControlModifiable) [self resetPosition];
+    [super touchesCancelled:touches withEvent:event];
+}
+
+- (void)resetPosition {
+    lastXValue = lastYValue = 0;
+    self.thumb.center = self.mCenter;
+    [self updateMovementDirection:-1];
 }
 
 - (void)callbackMoveX:(CGFloat)xValue Y:(CGFloat)yValue {
@@ -130,16 +144,15 @@ NSMutableDictionary* createButton(NSString* name, int* keycodes, NSString* dynam
         return;
     }
 
-    static char lastDirection = -2;
-    char direction = -1;
-    if (xValue != 0 && yValue != 0) {
+    int direction = -1;
+    if (xValue != 0 || yValue != 0) {
         CGFloat degree = atan2f(yValue, xValue) * (180.0 / M_PI);
         if (degree < 0) {
             degree += 360;
         }
         direction = (int)((degree+22.5)/45.0) % 8;
 #ifdef DEBUG_JOYSTICK
-        debugLabel.text = [NSString stringWithFormat:@"x=%f\ny=%f\natan=%f\ndeg=%f\ndirection=%d, last=%d\npressW=%d A=%d S=%d D=%d", atan2f(yValue, xValue), xValue, yValue, degree, direction, lastDirection,
+        debugLabel.text = [NSString stringWithFormat:@"x=%f\ny=%f\natan=%f\ndeg=%f\ndirection=%d, last=%d\npressW=%d A=%d S=%d D=%d", atan2f(yValue, xValue), xValue, yValue, degree, direction, self.movementDirection,
             direction >= DIRECTION_NORTH_EAST &&
             direction <= DIRECTION_NORTH_WEST,
             direction >= DIRECTION_NORTH_WEST &&
@@ -151,7 +164,11 @@ NSMutableDictionary* createButton(NSString* name, int* keycodes, NSString* dynam
             direction == DIRECTION_NORTH_EAST];
 #endif
     }
-    if (lastDirection == direction) {
+    [self updateMovementDirection:direction];
+}
+
+- (void)updateMovementDirection:(int)direction {
+    if (self.movementDirection == direction) {
         return;
     }
 
@@ -176,7 +193,7 @@ NSMutableDictionary* createButton(NSString* name, int* keycodes, NSString* dynam
         mod);
 
     self.fwdLockView.hidden = direction != DIRECTION_NORTH;
-    lastDirection = direction;
+    self.movementDirection = direction;
 }
 
 - (void)setFrame:(CGRect)frame {

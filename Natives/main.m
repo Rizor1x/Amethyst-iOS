@@ -202,6 +202,16 @@ void init_setupCustomControls() {
     NSString *controlPath = [@(getenv("AME_HOME")) stringByAppendingPathComponent:@"controlmap"];
     [fm createDirectoryAtPath:controlPath withIntermediateDirectories:NO attributes:nil error:nil];
     generateAndSaveDefaultControl();
+    if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {
+        NSString *preset = [NSBundle.mainBundle pathForResource:@"bedrock_ipad11" ofType:@"json"];
+        NSString *destination = [controlPath stringByAppendingPathComponent:@"bedrock_ipad11.json"];
+        if (preset && ![fm fileExistsAtPath:destination]) {
+            NSError *error;
+            if (![fm copyItemAtPath:preset toPath:destination error:&error]) {
+                NSLog(@"[Controls] Could not install the iPad preset: %@", error.localizedDescription);
+            }
+        }
+    }
     NSString *gamepadControlPath = [controlPath stringByAppendingPathComponent:@"gamepads"];
     [fm createDirectoryAtPath:gamepadControlPath withIntermediateDirectories:NO attributes:nil error:nil];
     generateAndSaveDefaultControlForGamepad();

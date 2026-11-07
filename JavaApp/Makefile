@@ -3,7 +3,6 @@ SOURCEDIR := src
 OUTPUTDIR := build
 
 SOURCES := $(shell find $(SOURCEDIR) -type f -name '*.java')
-CLASSES := $(SOURCES:$(SOURCEDIR)/%.java=$(OUTPUTDIR)/%.class)
 
 TARGETS := $(shell find $(SOURCEDIR) -mindepth 1 -maxdepth 1 -type d)
 TARGETS := $(TARGETS:$(SOURCEDIR)/%=$(OUTPUTDIR)/%.jar)
@@ -12,43 +11,41 @@ TARGETS := $(TARGETS:$(SOURCEDIR)/%=$(OUTPUTDIR)/%.jar)
 JCFLAGS := -cp "$(subst $() $(),:,$(wildcard $(SOURCEDIR)/*/):$(wildcard libs/*/*.jar))" -XDignore.symbol.file
 
 all: $(TARGETS)
-	
-# Sometimes the CI produces empty class file resulting in broken jar, so we check and abort here
-check_empty_classes:
-	@set -e
-	@echo "Checking for empty class files"
-	$(eval EMPTY_CLASSES := $(shell find $(OUTPUTDIR) -name '*.class' -size 0))
-	@if [ -n "$(EMPTY_CLASSES)" ]; then \
-		echo "Error: found empty class files in $@: $(EMPTY_CLASSES)"; \
+
+# Each jar owns its class directory. Shared sources remain on the classpath
+# without letting concurrent javac invocations write the same class files.
+$(OUTPUTDIR)/.%.compiled: $(SOURCES) Makefile
+	@rm -f $@
+	@rm -rf $(OUTPUTDIR)/$*
+	@mkdir -p $(OUTPUTDIR)/$*
+	@echo "Compiling $*"
+	@$(BOOTJDK)/javac $(JCFLAGS) -implicit:none -d $(OUTPUTDIR)/$* $(filter $(SOURCEDIR)/$*/%,$(SOURCES))
+	@empty_classes=$$(find $(OUTPUTDIR)/$* -name '*.class' -size 0); \
+	if [ -n "$$empty_classes" ]; then \
+		echo "Error: found empty class files: $$empty_classes"; \
 		exit 1; \
 	fi
+	@touch $@
 
-# Rules for building java class
-$(CLASSES): $(OUTPUTDIR)/%.class: $(SOURCEDIR)/%.java
-	@set -e
-	$(eval TARGET=$(word 2, $(subst /, ,$@)))
-	@mkdir -p $(OUTPUTDIR)/classes
-	@mkdir -p $(dir $@)
-	@echo "Compiling $<"
-	@$(BOOTJDK)/javac $(JCFLAGS) -d $(OUTPUTDIR)/classes $<
-	@cp $(@:$(OUTPUTDIR)/$(TARGET)/%.class=$(OUTPUTDIR)/classes/%*.class) $(dir $@)/
-
-$(OUTPUTDIR)/launcher.jar: $(CLASSES) check_empty_classes
+$(OUTPUTDIR)/launcher.jar: $(OUTPUTDIR)/.launcher.compiled
 	@set -e
 	@echo "Creating $@"
 	@$(BOOTJDK)/jar -cf $@ -C $(basename $@) .
 
-$(OUTPUTDIR)/lwjgl.jar: $(CLASSES) check_empty_classes
+$(OUTPUTDIR)/lwjgl.jar: $(OUTPUTDIR)/.lwjgl.compiled
 	@set -e
 	@echo "Creating $@"
+	@rm -rf $(OUTPUTDIR)/lwjgl_lib
 	@mkdir -p $(OUTPUTDIR)/lwjgl_lib
 	@cd $(OUTPUTDIR)/lwjgl_lib && find ../../libs/lwjgl -name 'lwjgl*.jar' -exec $(BOOTJDK)/jar -xf {} \; && rm -rf META-INF
 	@cp -R $(OUTPUTDIR)/lwjgl/* $(OUTPUTDIR)/lwjgl_lib/
 	@$(BOOTJDK)/jar -cf $@ -C $(OUTPUTDIR)/lwjgl_lib .
 
-$(OUTPUTDIR)/patchjna_agent.jar: $(CLASSES)
+$(OUTPUTDIR)/patchjna_agent.jar: $(OUTPUTDIR)/.patchjna_agent.compiled $(SOURCEDIR)/patchjna_agent.txt
 	@set -e
-	@mv $(basename $@)/com/sun/jna/Platform.class $(basename $@)/com/sun/jna/Platform.class.patch
+	@if [ -f $(basename $@)/com/sun/jna/Platform.class ]; then \
+		mv $(basename $@)/com/sun/jna/Platform.class $(basename $@)/com/sun/jna/Platform.class.patch; \
+	fi
 	@echo "Creating $@"
 	@$(BOOTJDK)/jar -cfm $@ $(SOURCEDIR)/patchjna_agent.txt -C $(basename $@) .
 

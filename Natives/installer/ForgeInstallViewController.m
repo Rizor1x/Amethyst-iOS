@@ -1,6 +1,7 @@
 #import "AFNetworking.h"
 #import "ForgeInstallViewController.h"
 #import "LauncherNavigationController.h"
+#import "NeoForgeVersion.h"
 #import "WFWorkflowProgressView.h"
 #import "ios_uikit_bridge.h"
 #import "utils.h"
@@ -443,11 +444,11 @@
 - (NSString *)getDisplayName:(NSString *)version {
     if ([self.currentVendor isEqualToString:@"NeoForge"]) {
 
-        NSString *mcVersion = [self extractMinecraftVersionFromNeoForgeVersion:version];
+        NSString *mcVersion = NeoForgeMinecraftVersion(version);
         
-        if (![mcVersion isEqualToString:@"Unknown"]) {
+        if (mcVersion) {
 
-            if ([self isSnapshotVersion:mcVersion] || [mcVersion containsString:@"w"]) {
+            if ([mcVersion containsString:@"w"] || [mcVersion containsString:@"-snapshot-"]) {
                 return [NSString stringWithFormat:@"NeoForge %@ (Snapshot %@)", 
                         version, mcVersion];
             } else {
@@ -499,51 +500,6 @@
     return @"Unknown";
 }
 
-- (NSString *)extractMinecraftVersionFromNeoForgeVersion:(NSString *)version {
-    /* NeoForge versioning: [MC version without 1.].[NeoForge version][-beta/alpha]
-       Example: "21.4.114-beta" for Minecraft 1.21.4
-       Special case: "0.25w14craftmine.5-beta" contains snapshot "25w14craftmine" */
-    
-    NSString *cleanVersion = version;
-    NSRange hyphenRange = [version rangeOfString:@"-"];
-    if (hyphenRange.location != NSNotFound) {
-        cleanVersion = [version substringToIndex:hyphenRange.location];
-    }
-    
-    NSRegularExpression *snapshotRegex = [NSRegularExpression 
-        regularExpressionWithPattern:@"(\\d{2}w\\d{2}[a-z]*)" 
-        options:NSRegularExpressionCaseInsensitive error:nil];
-    
-    NSTextCheckingResult *snapshotMatch = [snapshotRegex firstMatchInString:cleanVersion options:0 range:NSMakeRange(0, cleanVersion.length)];
-    if (snapshotMatch) {
-        NSString *snapshotVersion = [cleanVersion substringWithRange:snapshotMatch.range];
-        return snapshotVersion; // Return snapshot version directly
-    }
-    
-    NSArray *components = [cleanVersion componentsSeparatedByString:@"."];
-    if (components.count >= 2) {
-        NSString *majorComponent = components[0];
-        NSString *minorComponent = components[1];
-        
-        if ([self isNumeric:majorComponent] && [self isNumeric:minorComponent]) {
-            NSString *mcVersion = [NSString stringWithFormat:@"1.%@.%@", majorComponent, minorComponent];
-            return mcVersion;
-        }
-    }
-    
-    NSRegularExpression *versionRegex = [NSRegularExpression 
-        regularExpressionWithPattern:@"(\\d+\\.\\d+)" 
-        options:0 error:nil];
-    
-    NSTextCheckingResult *match = [versionRegex firstMatchInString:version options:0 range:NSMakeRange(0, version.length)];
-    if (match) {
-        NSString *extractedPart = [version substringWithRange:match.range];
-        return [NSString stringWithFormat:@"1.%@", extractedPart];
-    }
-    
-    return @"Unknown";
-}
-
 - (BOOL)isSnapshotVersion:(NSString *)version {
     if (version.length == 0) return NO;
     NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"(?i)^\\d{2}w\\d{2}[a-z]$" options:0 error:nil];
@@ -573,13 +529,6 @@
     } else {
         return @"Release";
     }
-}
-
-- (BOOL)isNumeric:(NSString *)string {
-    if (!string || string.length == 0) return NO;
-    
-    NSCharacterSet *nonNumbers = [[NSCharacterSet decimalDigitCharacterSet] invertedSet];
-    return [string rangeOfCharacterFromSet:nonNumbers].location == NSNotFound;
 }
 
 #pragma mark - UITableViewDataSource
@@ -878,9 +827,9 @@
             }
         }
         
-        NSString *minecraftVersion = [self extractMinecraftVersionFromNeoForgeVersion:version];
-        
-        if ([minecraftVersion isEqualToString:@"Unknown"]) {
+        NSString *minecraftVersion = NeoForgeMinecraftVersion(version);
+
+        if (!minecraftVersion) {
             NSLog(@"[ForgeInstall] Skipping NeoForge version with unknown MC version: %@", version);
             [self.dataLock unlock];
             return;
@@ -973,13 +922,8 @@
         [indices sortUsingComparator:^NSComparisonResult(NSNumber *a, NSNumber *b) {
             NSString *va = self.versionList[a.integerValue];
             NSString *vb = self.versionList[b.integerValue];
-            BOOL vaIsSnapshot = [self isSnapshotVersion:va];
-            BOOL vbIsSnapshot = [self isSnapshotVersion:vb];
-            if (vaIsSnapshot != vbIsSnapshot) {
-
-            }
-            if (vaIsSnapshot && vbIsSnapshot) {
-
+            if ([vendor isEqualToString:@"NeoForge"]) {
+                return CompareNeoForgeVersionsDescending(va, vb);
             }
 
             NSArray *pa = [va componentsSeparatedByString:@"."];
@@ -1025,20 +969,8 @@
                     NSInteger rC = rp.count > 2 ? [rp[2] integerValue] : 0;
                     if (lC != rC) return lC < rC ? NSOrderedDescending : NSOrderedAscending;
                     return NSOrderedSame;
-                } else {
-
-                    BOOL lBeta = [lhs containsString:@"-beta"];
-                    BOOL rBeta = [rhs containsString:@"-beta"];
-                    NSString *lClean = [lhs stringByReplacingOccurrencesOfString:@"-beta" withString:@""];
-                    NSString *rClean = [rhs stringByReplacingOccurrencesOfString:@"-beta" withString:@""];
-                    NSArray *lc = [lClean componentsSeparatedByString:@"."];
-                    NSArray *rc = [rClean componentsSeparatedByString:@"."];
-                    NSInteger lBuild = lc.count > 2 ? [lc[2] integerValue] : 0;
-                    NSInteger rBuild = rc.count > 2 ? [rc[2] integerValue] : 0;
-                    if (lBuild != rBuild) return lBuild < rBuild ? NSOrderedDescending : NSOrderedAscending;
-
-                    return NSOrderedSame;
                 }
+                return CompareNeoForgeVersionsDescending(lhs, rhs);
             }];
         }
         

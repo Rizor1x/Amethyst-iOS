@@ -19,6 +19,111 @@
 #include "ctxbridges/osmesa_internal.h"
 #include "utils.h"
 
+#include <stdatomic.h>
+#include <string.h>
+#include <time.h>
+
+#define FRAMETIME_WINDOW_SIZE 100
+#define FRAMETIME_REPORT_INTERVAL_NS 2000000000ULL
+
+static atomic_bool frametimeEnabled;
+// The low bit is set in the background. Returning to the foreground advances
+// the generation, even if the game did not swap while the app was suspended.
+static atomic_uint frametimeLifecycle;
+static pthread_mutex_t frametimeLock = PTHREAD_MUTEX_INITIALIZER;
+static struct {
+    uint64_t previousSwap;
+    uint64_t windowStart;
+    uint64_t samples[FRAMETIME_WINDOW_SIZE];
+    size_t count;
+    unsigned int lifecycle;
+} frametime;
+
+static void frametimeObserveLifecycle(void) {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSNotificationCenter *notifications = NSNotificationCenter.defaultCenter;
+        [notifications addObserverForName:UIApplicationDidEnterBackgroundNotification
+            object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *notification) {
+                atomic_fetch_or_explicit(&frametimeLifecycle, 1, memory_order_relaxed);
+            }];
+        [notifications addObserverForName:UIApplicationWillEnterForegroundNotification
+            object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *notification) {
+                if (atomic_load_explicit(&frametimeLifecycle, memory_order_relaxed) & 1) {
+                    atomic_fetch_add_explicit(&frametimeLifecycle, 1, memory_order_relaxed);
+                }
+            }];
+    });
+}
+
+static void frametimeReport(void) {
+    size_t count = frametime.count;
+    if (count == 0) return;
+
+    for (size_t i = 1; i < count; i++) {
+        uint64_t sample = frametime.samples[i];
+        size_t j = i;
+        while (j > 0 && frametime.samples[j - 1] > sample) {
+            frametime.samples[j] = frametime.samples[j - 1];
+            j--;
+        }
+        frametime.samples[j] = sample;
+    }
+
+    // Nearest rank uses ceil(percentile * count / 100), starting at rank 1.
+    size_t p50 = (50 * count + 99) / 100 - 1;
+    size_t p95 = (95 * count + 99) / 100 - 1;
+    NSLog(@"[Frametime] %zu swap intervals | p50 %.2f ms | p95 %.2f ms | max %.2f ms",
+        count, frametime.samples[p50] / 1e6, frametime.samples[p95] / 1e6,
+        frametime.samples[count - 1] / 1e6);
+    frametime.count = 0;
+}
+
+static void frametimeStart(void) {
+    const char *value = getenv("AMETHYST_FRAMETIME_DEBUG");
+    BOOL enabled = value && strcmp(value, "1") == 0;
+    if (enabled) frametimeObserveLifecycle();
+
+    pthread_mutex_lock(&frametimeLock);
+    frametime.previousSwap = 0;
+    frametime.count = 0;
+    atomic_store_explicit(&frametimeEnabled, enabled, memory_order_relaxed);
+    pthread_mutex_unlock(&frametimeLock);
+}
+
+static void frametimeStop(void) {
+    pthread_mutex_lock(&frametimeLock);
+    atomic_store_explicit(&frametimeEnabled, false, memory_order_relaxed);
+    frametimeReport();
+    pthread_mutex_unlock(&frametimeLock);
+}
+
+static void frametimeRecordSwap(void) {
+    if (!atomic_load_explicit(&frametimeEnabled, memory_order_relaxed)) return;
+
+    pthread_mutex_lock(&frametimeLock);
+    unsigned int lifecycle = atomic_load_explicit(&frametimeLifecycle, memory_order_relaxed);
+    if (!atomic_load_explicit(&frametimeEnabled, memory_order_relaxed) || (lifecycle & 1)) {
+        pthread_mutex_unlock(&frametimeLock);
+        return;
+    }
+
+    uint64_t now = clock_gettime_nsec_np(CLOCK_MONOTONIC);
+    if (frametime.previousSwap == 0 || lifecycle != frametime.lifecycle) {
+        frametime.windowStart = now;
+        frametime.lifecycle = lifecycle;
+    } else {
+        frametime.samples[frametime.count++] = now - frametime.previousSwap;
+        if (frametime.count == FRAMETIME_WINDOW_SIZE ||
+            now - frametime.windowStart >= FRAMETIME_REPORT_INTERVAL_NS) {
+            frametimeReport();
+            frametime.windowStart = now;
+        }
+    }
+    frametime.previousSwap = now;
+    pthread_mutex_unlock(&frametimeLock);
+}
+
 int clientAPI;
 
 void JNI_LWJGL_changeRenderer(const char* value_c) {
@@ -32,6 +137,7 @@ void JNI_LWJGL_changeRenderer(const char* value_c) {
 }
 
 void pojavTerminate() {
+    frametimeStop();
     CallbackBridge_nativeSetInputReady(NO);
     if (!br_terminate) return;
     br_terminate();
@@ -42,6 +148,7 @@ void* pojavGetCurrentContext() {
 }
 
 int pojavInit(BOOL useStackQueue) {
+    frametimeStart();
     clientAPI = GLFW_OPENGL_API;
     isInputReady = 1;
     isUseStackQueueCall = useStackQueue;
@@ -94,6 +201,7 @@ void pojavSetWindowHint(int hint, int value) {
 }
 
 void pojavSwapBuffers() {
+    frametimeRecordSwap();
     br_swap_buffers();
 }
 

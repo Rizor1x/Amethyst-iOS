@@ -1,5 +1,3 @@
-#include <CommonCrypto/CommonDigest.h>
-
 #import "authenticator/BaseAuthenticator.h"
 #import "installer/modpack/ModpackAPI.h"
 #import "AFNetworking.h"
@@ -336,17 +334,10 @@
         return existence;
     }
 
-    NSData *data = [NSData dataWithContentsOfFile:path];
-    if (data == nil) {
-        NSLog(@"[MCDL] SHA1 checker: file doesn't exist: %@", altName ? altName : path.lastPathComponent);
+    NSString *localSHA = [MinecraftResourceUtils sha1ForFileAtPath:path];
+    if (!localSHA) {
+        NSLog(@"[MCDL] SHA1 checker: could not read file: %@", altName ? altName : path.lastPathComponent);
         return NO;
-    }
-
-    unsigned char digest[CC_SHA1_DIGEST_LENGTH];
-    CC_SHA1(data.bytes, (CC_LONG)data.length, digest);
-    NSMutableString *localSHA = [NSMutableString stringWithCapacity:CC_SHA1_DIGEST_LENGTH * 2];
-    for(int i = 0; i < CC_SHA1_DIGEST_LENGTH; i++) {
-        [localSHA appendFormat:@"%02x", digest[i]];
     }
 
     BOOL check = [sha isEqualToString:localSHA];

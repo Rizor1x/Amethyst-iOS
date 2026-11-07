@@ -9,6 +9,30 @@
 
 @implementation MinecraftResourceUtils
 
++ (NSString *)sha1ForFileAtPath:(NSString *)path {
+    NSInputStream *stream = [NSInputStream inputStreamWithFileAtPath:path];
+    if (!stream) return nil;
+    [stream open];
+
+    CC_SHA1_CTX context;
+    CC_SHA1_Init(&context);
+    uint8_t buffer[64 * 1024];
+    NSInteger bytesRead;
+    while ((bytesRead = [stream read:buffer maxLength:sizeof(buffer)]) > 0) {
+        CC_SHA1_Update(&context, buffer, (CC_LONG)bytesRead);
+    }
+    [stream close];
+    if (bytesRead < 0) return nil;
+
+    unsigned char digest[CC_SHA1_DIGEST_LENGTH];
+    CC_SHA1_Final(digest, &context);
+    NSMutableString *hex = [NSMutableString stringWithCapacity:sizeof(digest) * 2];
+    for (NSUInteger i = 0; i < sizeof(digest); i++) {
+        [hex appendFormat:@"%02x", digest[i]];
+    }
+    return hex;
+}
+
 // Handle inheritsFrom
 + (void)processVersion:(NSMutableDictionary *)json inheritsFrom:(NSMutableDictionary *)inheritsFrom {
     [self insertSafety:inheritsFrom from:json arr:@[
